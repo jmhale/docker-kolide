@@ -1,0 +1,91 @@
+version: '2'
+services:
+  mysql:
+    container_name: kolide_mysql
+    image: mysql:5.7
+    volumes:
+      - .:/tmp
+    command: mysqld --datadir=/tmp/mysqldata --slow_query_log=1 --log_output=TABLE --log-queries-not-using-indexes --event-scheduler=ON
+    environment:
+      MYSQL_ROOT_PASSWORD: toor
+      MYSQL_DATABASE: kolide
+      MYSQL_USER: kolide
+      MYSQL_PASSWORD: kolide
+  redis:
+    container_name: kolide_redis
+    image: redis:3.2.4
+  fleet:
+    container_name: kolide_fleet
+    image: kolide/fleet:latest
+    environment:
+      KOLIDE_AUTH_JWT_KEY: ${KOLIDE_AUTH_JWT_KEY}
+      KOLIDE_LOGGING_JSON: "true"
+      KOLIDE_MYSQL_ADDRESS: kolide_mysql
+      KOLIDE_MYSQL_DATABASE: ${KOLIDE_MYSQL_DATABASE}
+      KOLIDE_MYSQL_PASSWORD: ${KOLIDE_MYSQL_PASSWORD}
+      KOLIDE_MYSQL_USERNAME: ${KOLIDE_MYSQL_USERNAME}
+      KOLIDE_REDIS_ADDRESS: kolide_redis:6379
+      KOLIDE_SERVER_ADDRESS: 0.0.0.0:8080
+      KOLIDE_SERVER_TLS: "false"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.middlewares.kolide-redirect-redirectscheme.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.kolide-redirect-redirectscheme.redirectscheme.permanent=true"
+      - "traefik.http.routers.kolide-http.rule=Host(`kolide.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.kolide-http.middlewares=kolide-redirect-redirectscheme"
+      - "traefik.http.routers.kolide-http.entrypoints=http"
+      - "traefik.http.routers.kolide-https.rule=Host(`kolide.${COMMON_DOMAIN}`)"
+      - "traefik.http.routers.kolide-https.entrypoints=https"
+      - "traefik.http.routers.kolide-https.service=kolide-https"
+      - "traefik.http.routers.kolide-https.tls.certresolver=cloudflare"
+      - "traefik.http.services.kolide-https.loadbalancer.server.port=8080"
+      - "traefik.http.services.kolide-https.loadbalancer.server.scheme=h2c"
+
+  traefik:
+    container_name: kolide_traefik
+    image: traefik:latest
+    restart: always
+    domainname: ${COMMON_DOMAIN}
+    command:
+      - "--accesslog=true"
+      - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.http.address=:80"
+      - "--entrypoints.https.address=:443"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge=true"
+      - "--certificatesresolvers.cloudflare.acme.dnschallenge.provider=cloudflare"
+      - "--certificatesresolvers.cloudflare.acme.email=${COMMON_ADMIN_EMAIL}"
+      - "--certificatesresolvers.cloudflare.acme.storage=/letsencrypt/acme.json"
+    environment:
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+      - CF_ZONE_API_TOKEN=${CF_ZONE_API_TOKEN}
+    networks:
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /root/docker/traefik/letsencrypt:/letsencrypt
+    labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.tls.certresolver=cloudflare"
+        - "traefik.http.routers.api.tls.domains[0].main=${COMMON_DOMAIN}"
+        - "traefik.http.routers.api.tls.domains[0].sans=*.${COMMON_DOMAIN}"
+        - "traefik.http.middlewares.traefik-redirect-redirectscheme.redirectscheme.scheme=https"
+        - "traefik.http.middlewares.traefik-redirect-redirectscheme.redirectscheme.permanent=true"
+        - "traefik.http.routers.traefik-http.rule=Host(`traefik.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.traefik-http.middlewares=traefik-redirect-redirectscheme"
+        - "traefik.http.routers.traefik-http.entrypoints=http"
+        - "traefik.http.routers.traefik-https.rule=Host(`traefik.${COMMON_DOMAIN}`)"
+        - "traefik.http.routers.traefik-https.entrypoints=https"
+        - "traefik.http.routers.traefik-https.service=traefik-https"
+        - "traefik.http.routers.traefik-https.tls.certresolver=cloudflare"
+        - "traefik.http.services.traefik-https.loadbalancer.server.port=8080"
+
+# docker-compose up -d mysql # just start mysql
+# docker-compose run  --rm fleet fleet prepare db # run db migrations for kolide
+# docker-compose up -d # bring up the rest of the stack
