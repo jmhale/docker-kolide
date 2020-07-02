@@ -3,13 +3,14 @@ services:
   mysql:
     container_name: kolide_mysql
     image: mysql:5.7
+    command: mysqld --slow_query_log=1 --log_output=TABLE --log-queries-not-using-indexes --event-scheduler=ON
     volumes:
-      - .:/tmp
-    command: mysqld --datadir=/tmp/db --slow_query_log=1 --log_output=TABLE --log-queries-not-using-indexes --event-scheduler=ON
+            - /root/docker/db:/var/lib/mysql
+    user: root
     environment:
       MYSQL_ROOT_PASSWORD: ${KOLIDE_MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${KOLIDE_MYSQL_DATABASE}
-      MYSQL_USER: ${KOLIDE_MYSQL_PASSWORD}
+      MYSQL_USER: ${KOLIDE_MYSQL_USERNAME}
       MYSQL_PASSWORD: ${KOLIDE_MYSQL_PASSWORD}
   redis:
     container_name: kolide_redis
@@ -39,7 +40,7 @@ services:
       - "traefik.http.routers.kolide-https.service=kolide-https"
       - "traefik.http.routers.kolide-https.tls.certresolver=cloudflare"
       - "traefik.http.services.kolide-https.loadbalancer.server.port=8080"
-      - "traefik.http.services.kolide-https.loadbalancer.server.scheme=h2c"
+        #- "traefik.http.services.kolide-https.loadbalancer.server.scheme=h2c"
   traefik:
     container_name: kolide_traefik
     image: traefik:latest
